@@ -9,6 +9,7 @@ Amazon Bedrock の各種 API を使用したサンプルコード集です。
 - AWS 認証情報が設定済みであること（AWS CLI の `aws configure`、環境変数、または IAM ロール）
 - Amazon Bedrock コンソールで使用するモデルへのアクセスが有効化済みであること
 - ガードレールが作成済みで、アカウントレベル enforcement が設定済みであること（us-east-1）
+- ナレッジベースが作成・同期済みであること（RetrieveAndGenerate サンプル使用時）
 
 ## セットアップ
 
@@ -27,6 +28,7 @@ GUARDRAIL_ID=<ガードレールID（ApplyGuardrail API 用）>
 GUARDRAIL_VERSION=1
 GUARDRAIL_MEDICAL_ID=<医療系ガードレールID（アプリ側指定用）>
 GUARDRAIL_MEDICAL_VERSION=1
+KNOWLEDGE_BASE_ID=<ナレッジベースID（RetrieveAndGenerate API 用）>
 ```
 
 > `.env` は `.gitignore` に含まれているため、Git リポジトリには追跡されません。
@@ -46,13 +48,15 @@ guardrail_enforcement/
 │   ├── converse_stream.py                # ConverseStream API（Claude Haiku 4.5）
 │   ├── mantle_messages.py                # mantle + Anthropic Messages API（Claude Haiku 4.5）
 │   ├── mantle_responses.py               # mantle + Responses API（GPT-5.6 Luna）
-│   └── strands_agent.py                  # Strands Agents SDK（Claude Haiku 4.5）
+│   ├── strands_agent.py                  # Strands Agents SDK（Claude Haiku 4.5）
+│   └── retrieve_and_generate.py          # RetrieveAndGenerate API（Claude Haiku 4.5）
 └── apply_guardrail/                  # ガードレールをコードで指定するサンプル
     ├── invoke_model_guardrail.py         # InvokeModel + アプリ側ガードレール
     ├── invoke_model_stream_guardrail.py  # InvokeModelWithResponseStream + アプリ側ガードレール
     ├── converse_guardrail.py             # Converse + アプリ側ガードレール
     ├── converse_stream_guardrail.py      # ConverseStream + アプリ側ガードレール
     ├── strands_agent_guardrail.py        # Strands Agents SDK + アプリ側ガードレール
+    ├── retrieve_and_generate_guardrail.py  # RetrieveAndGenerate + アプリ側ガードレール
     ├── mantle_messages_guardrail.py      # mantle + Messages API + ApplyGuardrail API
     └── mantle_responses_guardrail.py     # mantle + Responses API + ApplyGuardrail API
 ```
@@ -61,8 +65,9 @@ guardrail_enforcement/
 
 ### no_guardrail（ガードレールをコードで指定しないサンプル）
 
-bedrock-runtime エンドポイント経由のサンプルは、アカウントレベル enforcement により自動的にガードレールが適用されます。
+bedrock-runtime エンドポイント経由のサンプル（InvokeModel / Converse 系）は、アカウントレベル enforcement により自動的にガードレールが適用されます。
 bedrock-mantle エンドポイント経由のサンプルはガードレールが適用されません（mantle は Guardrails 非対応）。
+bedrock-agent-runtime エンドポイント経由の RetrieveAndGenerate は enforcement が**適用されません**（詳細は後述の「RetrieveAndGenerate API と enforcement の関係」を参照）。
 
 ```powershell
 # InvokeModel API
@@ -85,6 +90,9 @@ uv run no_guardrail/mantle_responses.py
 
 # Strands Agents SDK
 uv run no_guardrail/strands_agent.py
+
+# RetrieveAndGenerate API（ナレッジベース）※ enforcement 非適用
+uv run no_guardrail/retrieve_and_generate.py
 ```
 
 ### apply_guardrail（アプリ側でガードレールを指定するサンプル）
@@ -107,6 +115,9 @@ uv run apply_guardrail/converse_stream_guardrail.py
 
 # Strands Agents SDK + アプリ側ガードレール
 uv run apply_guardrail/strands_agent_guardrail.py
+
+# RetrieveAndGenerate + アプリ側ガードレール ※ enforcement も適用される
+uv run apply_guardrail/retrieve_and_generate_guardrail.py
 ```
 
 bedrock-mantle 経由の呼び出しにもガードレールを適用したい場合は、
@@ -124,18 +135,20 @@ uv run apply_guardrail/mantle_responses_guardrail.py
 
 | サンプル | エンドポイント | API | モデル | ガードレール |
 |---------|--------------|-----|-------|:---:|
-| invoke_model.py | bedrock-runtime | InvokeModel | Claude Haiku 4.5 | enforcement のみ |
-| invoke_model_stream.py | bedrock-runtime | InvokeModelWithResponseStream | Claude Haiku 4.5 | enforcement のみ |
-| converse.py | bedrock-runtime | Converse | Claude Haiku 4.5 | enforcement のみ |
-| converse_stream.py | bedrock-runtime | ConverseStream | Claude Haiku 4.5 | enforcement のみ |
+| invoke_model.py | bedrock-runtime | InvokeModel | Claude Haiku 4.5 | enforcement 自動適用 |
+| invoke_model_stream.py | bedrock-runtime | InvokeModelWithResponseStream | Claude Haiku 4.5 | enforcement 自動適用 |
+| converse.py | bedrock-runtime | Converse | Claude Haiku 4.5 | enforcement 自動適用 |
+| converse_stream.py | bedrock-runtime | ConverseStream | Claude Haiku 4.5 | enforcement 自動適用 |
 | mantle_messages.py | bedrock-mantle | Anthropic Messages API | Claude Haiku 4.5 | 非対応 |
 | mantle_responses.py | bedrock-mantle | Responses API | GPT-5.6 Luna | 非対応 |
-| strands_agent.py | bedrock-runtime | Converse（内部） | Claude Haiku 4.5 | enforcement のみ |
+| strands_agent.py | bedrock-runtime | Converse（内部） | Claude Haiku 4.5 | enforcement 自動適用 |
+| retrieve_and_generate.py | bedrock-agent-runtime | RetrieveAndGenerate | Claude Haiku 4.5 | **enforcement 非適用** |
 | invoke_model_guardrail.py | bedrock-runtime | InvokeModel | Claude Haiku 4.5 | enforcement + アプリ指定 |
 | invoke_model_stream_guardrail.py | bedrock-runtime | InvokeModelWithResponseStream | Claude Haiku 4.5 | enforcement + アプリ指定 |
 | converse_guardrail.py | bedrock-runtime | Converse | Claude Haiku 4.5 | enforcement + アプリ指定 |
 | converse_stream_guardrail.py | bedrock-runtime | ConverseStream | Claude Haiku 4.5 | enforcement + アプリ指定 |
 | strands_agent_guardrail.py | bedrock-runtime | Converse（内部） | Claude Haiku 4.5 | enforcement + アプリ指定 |
+| retrieve_and_generate_guardrail.py | bedrock-agent-runtime | RetrieveAndGenerate | Claude Haiku 4.5 | enforcement + アプリ指定 |
 | mantle_messages_guardrail.py | bedrock-mantle | Messages API + ApplyGuardrail | Claude Haiku 4.5 | 手動適用 |
 | mantle_responses_guardrail.py | bedrock-mantle | Responses API + ApplyGuardrail | GPT-5.6 Luna | 手動適用 |
 
@@ -153,9 +166,72 @@ uv run apply_guardrail/mantle_responses_guardrail.py
 
 ## ガードレール enforcement の仕組み
 
-- **bedrock-runtime エンドポイント**: アカウントレベル enforcement が自動的に適用される。コード側での指定は不要。
-- **bedrock-mantle エンドポイント**: Guardrails 非対応。ガードレールを適用したい場合は ApplyGuardrail API で手動チェックが必要。
-- **enforcement + アプリ指定の併用**: 両方のガードレールが union（和集合）で適用され、同じフィルターが競合する場合はより制限の厳しい方が優先される。
+### エンドポイントごとの enforcement 適用状況
+
+| エンドポイント | API | enforcement 自動適用 | 備考 |
+|--------------|-----|:---:|------|
+| bedrock-runtime | InvokeModel / Converse 系 | ✅ | コード側での指定不要 |
+| bedrock-runtime | Converse（Strands Agents 内部） | ✅ | 内部で Converse API を使用するため自動適用 |
+| bedrock-agent-runtime | RetrieveAndGenerate | ❌ | guardrailConfiguration 未指定時は enforcement 非適用（※） |
+| bedrock-mantle | Messages API / Responses API | ❌ | Guardrails 非対応。ApplyGuardrail API で手動チェックが必要 |
+
+### RetrieveAndGenerate API と enforcement の関係
+
+**検証結果:**
+
+`RetrieveAndGenerate` API では、`guardrailConfiguration` をリクエストに含めない場合、アカウントレベル enforcement のガードレールが**適用されない**ことを確認しました。一方、`guardrailConfiguration` でアプリ側のガードレールを指定した場合は、指定したガードレールに加えて enforcement のガードレールも union で適用されます。
+
+| パターン | enforcement 適用 | アプリ指定ガードレール適用 |
+|---------|:---:|:---:|
+| `guardrailConfiguration` なし（no_guardrail 版） | ❌ | - |
+| `guardrailConfiguration` あり（apply_guardrail 版） | ✅ | ✅ |
+
+**公式ドキュメントの記述:**
+
+enforcement の公式ドキュメントでは、テスト対象 API として `InvokeModel`、`InvokeModelWithResponseStream`、`Converse`、`ConverseStream` の4つが挙げられており、`RetrieveAndGenerate` は言及されていません。
+
+> "Make a Amazon Bedrock inference call using InvokeModel, InvokeModelWithResponseStream, Converse, or ConverseStream."
+>
+> — [Apply cross-account safeguards with Amazon Bedrock Guardrails enforcements](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-enforcements.html)
+
+**結論:** RetrieveAndGenerate API で enforcement ガードレールを確実に適用するには、`guardrailConfiguration` を明示的に指定してください（`apply_guardrail/retrieve_and_generate_guardrail.py` を参照）。
+
+### Embed モデルと enforcement の非互換性
+
+ガードレール enforcement を有効にすると、デフォルトではすべてのモデルに対する `InvokeModel` 呼び出しにガードレールが適用されます。しかし、**Embedding モデル**（Amazon Titan Embed、Cohere Embed など）はテキスト生成モデルではなくベクトルを返すため、ガードレール評価と互換性がなく、呼び出し時にエラーが発生します。
+
+**発生するエラー例:**
+
+```
+ValidationException: Operation not allowed
+```
+
+**解決策:** enforcement 設定の `model_enforcement` で Embed モデルを `excluded_models` に追加してください。
+
+```json
+"model_enforcement": {
+    "included_models": {
+        "@@assign": ["ALL"]
+    },
+    "excluded_models": {
+        "@@assign": [
+            "amazon.titan-embed-text-v2:0",
+            "amazon.titan-embed-text-v1",
+            "amazon.titan-embed-image-v1",
+            "cohere.embed-english-v3",
+            "cohere.embed-multilingual-v3"
+        ]
+    }
+}
+```
+
+> 公式ドキュメントのポリシー例でも `excluded_models` に Embed モデルが含まれています。
+
+この設定を行わないと、ナレッジベースの同期（Embed モデルを内部使用）も失敗します。
+
+### enforcement + アプリ指定の併用
+
+両方のガードレールが union（和集合）で適用され、同じフィルターが競合する場合はより制限の厳しい方が優先されます。
 
 ## アカウントレベル ガードレール enforcement の設定手順
 
@@ -179,10 +255,11 @@ uv run apply_guardrail/mantle_responses_guardrail.py
 1. Amazon Bedrock コンソールで **Guardrails** を選択
 2. **Account-level enforcement configurations** セクションの **Add** を選択
 3. 作成したガードレールとバージョンを選択
-4. 選択的コンテンツガーディングを設定：
+4. Model enforcement control で **Embed モデルを除外リストに追加**する
+5. 選択的コンテンツガーディングを設定：
    - **Comprehensive**（推奨）: すべてのコンテンツにガードレールを適用
    - **Selective**: ガードコンテンツタグが付いたコンテンツのみ評価
-5. 設定を送信（Submit）
+6. 設定を送信（Submit）
 
 ### 注意事項
 
@@ -190,8 +267,13 @@ uv run apply_guardrail/mantle_responses_guardrail.py
 - 各アカウントにつき、リージョンごとに 1 つだけ設定可能
 - 設定には `bedrock:PutEnforcedGuardrailConfiguration` の IAM 権限が必要
 - 適用後は InvokeModel / Converse / ストリーミング API すべてに自動適用される
+- **RetrieveAndGenerate API には自動適用されない**（`guardrailConfiguration` を明示指定する必要がある）
+- **Embed モデルは必ず excluded_models に追加する**（ナレッジベース同期エラーの原因になる）
 - アプリケーション側で別のガードレール ID を指定した場合、両方が union（和集合）で適用され、より制限の厳しい方が優先される
 
-参照: [Apply cross-account safeguards with Amazon Bedrock Guardrails enforcements](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-enforcements.html)
+## 参照
 
-参照: [Endpoints supported by Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints.html)
+- [Apply cross-account safeguards with Amazon Bedrock Guardrails enforcements](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-enforcements.html)
+- [Endpoints supported by Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints.html)
+- [Amazon Bedrock Guardrails announces IAM Policy-based enforcement (Known limitations)](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-guardrails-announces-iam-policy-based-enforcement-to-deliver-safe-ai-interactions/)
+- [Introducing guardrails in Amazon Bedrock Knowledge Bases](https://aws.amazon.com/blogs/machine-learning/introducing-guardrails-in-knowledge-bases-for-amazon-bedrock/)
