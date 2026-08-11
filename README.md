@@ -233,6 +233,73 @@ ValidationException: Operation not allowed
 
 両方のガードレールが union（和集合）で適用され、同じフィルターが競合する場合はより制限の厳しい方が優先されます。
 
+### enforcement ブロック時のトレース情報
+
+enforcement によりリクエストがブロックされた場合、レスポンスにガードレールの assessment 情報（ブロック理由）が含まれます。
+
+公式ドキュメント（[guardrails-enforcements.html](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-enforcements.html)）にも以下の記載があります：
+
+> "Check the response for guardrail assessment information. The guardrail response will include enforced guardrail information."
+
+#### トレースの有効化方法
+
+フィルター別の詳細な内訳（どのポリシーがどの信頼度でブロックしたか）を取得するには、明示的にトレースを有効化します。
+
+**Converse API:**
+
+```python
+response = client.converse(
+    modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    messages=[...],
+    guardrailConfig={
+        "guardrailIdentifier": "your-guardrail-id",
+        "guardrailVersion": "1",
+        "trace": "enabled",  # トレース有効化
+    },
+)
+
+# レスポンスのトレースを参照
+trace = response.get("trace", {}).get("guardrail", {})
+```
+
+**InvokeModel API:**
+
+```python
+response = client.invoke_model(
+    modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    body=json.dumps({...}),
+    trace="ENABLED",  # トレース有効化
+    guardrailIdentifier="your-guardrail-id",
+    guardrailVersion="1",
+)
+
+# レスポンスボディ内のトレースを参照
+result = json.loads(response["body"].read())
+trace = result.get("amazon-bedrock-trace", {})
+```
+
+#### トレースの取得可否まとめ
+
+| 状況 | assessment 情報 | 詳細トレース（フィルター別内訳） |
+|------|:---:|:---:|
+| enforcement のみ（trace 未指定） | ✅ ブロック理由は確認可能 | 限定的 |
+| enforcement のみ + `trace: "enabled"` | ✅ | ✅ |
+| enforcement + アプリ指定 + `trace: "enabled"` | ✅ | ✅（両方のガードレール分） |
+
+#### 複数ガードレールの指定について
+
+各 API（InvokeModel / Converse / RetrieveAndGenerate）で **1 リクエストにつきアプリ側から指定できるガードレールは 1 つのみ** です（複数指定は不可）。
+
+複数のガードレールが同時に適用されるのは以下のケースに限られます：
+
+| 組み合わせ | 最大適用数 | 仕組み |
+|-----------|:---:|------|
+| アプリ指定のみ | 1 | API パラメータで指定 |
+| アプリ指定 + アカウント enforcement | 2 | サービス側で union 適用 |
+| アプリ指定 + アカウント enforcement + 組織 enforcement | 3 | サービス側で union 適用 |
+
+複数のポリシー（コンテンツフィルター + 拒否トピック + ワードフィルター等）を同時に適用したい場合は、1 つのガードレールに複数のポリシーをまとめて設定します。
+
 ## アカウントレベル ガードレール enforcement の設定手順
 
 ### ステップ 1: ガードレールを作成する
@@ -277,3 +344,4 @@ ValidationException: Operation not allowed
 - [Endpoints supported by Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints.html)
 - [Amazon Bedrock Guardrails announces IAM Policy-based enforcement (Known limitations)](https://aws.amazon.com/blogs/machine-learning/amazon-bedrock-guardrails-announces-iam-policy-based-enforcement-to-deliver-safe-ai-interactions/)
 - [Introducing guardrails in Amazon Bedrock Knowledge Bases](https://aws.amazon.com/blogs/machine-learning/introducing-guardrails-in-knowledge-bases-for-amazon-bedrock/)
+- [Safeguard your generative AI workloads from prompt injections (トレース設定)](https://aws.amazon.com/blogs/security/safeguard-your-generative-ai-workloads-from-prompt-injections/)
