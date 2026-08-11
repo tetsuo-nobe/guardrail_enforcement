@@ -11,7 +11,45 @@ Amazon Bedrock の各種 API を使用したサンプルコード集です。
 - ガードレールが作成済みで、アカウントレベル enforcement が設定済みであること（us-east-1）
 - ナレッジベースが作成・同期済みであること（RetrieveAndGenerate サンプル使用時）
 
-## セットアップ
+## アカウントレベル ガードレール enforcement の設定手順
+
+### ステップ 1: ガードレールを作成する
+
+1. [Amazon Bedrock コンソール](https://console.aws.amazon.com/bedrock) にサインイン
+2. 左ナビゲーションから **Guardrails** を選択
+3. **Create guardrail** を選択
+4. ウィザードでフィルターを設定する（コンテンツフィルター、拒否トピック、ワードフィルター、機密情報フィルター、コンテキストグラウンディングチェック）
+5. **Automated reasoning policy は有効にしない**（enforcement では未サポート、ランタイムエラーになる）
+6. ウィザードを完了して作成
+
+### ステップ 2: ガードレールのバージョンを作成する
+
+1. Guardrails ページで作成したガードレールを選択
+2. **Create version** を選択
+3. ガードレール ID とバージョン番号（例: "1"）を控える
+
+### ステップ 3: アカウントレベル enforcement を有効化する
+
+1. Amazon Bedrock コンソールで **Guardrails** を選択
+2. **Account-level enforcement configurations** セクションの **Add** を選択
+3. 作成したガードレールとバージョンを選択
+4. Model enforcement control で **Embed モデルを除外リストに追加**する
+5. 選択的コンテンツガーディングを設定：
+   - **Comprehensive**（推奨）: すべてのコンテンツにガードレールを適用
+   - **Selective**: ガードコンテンツタグが付いたコンテンツのみ評価
+6. 設定を送信（Submit）
+
+### 注意事項
+
+- リージョンごとに設定が必要（本サンプルでは us-east-1）
+- 各アカウントにつき、リージョンごとに 1 つだけ設定可能
+- 設定には `bedrock:PutEnforcedGuardrailConfiguration` の IAM 権限が必要
+- 適用後は InvokeModel / Converse / ストリーミング API すべてに自動適用される
+- **RetrieveAndGenerate API には自動適用されない**（`guardrailConfiguration` を明示指定する必要がある）
+- **Embed モデルは必ず excluded_models に追加する**（ナレッジベース同期エラーの原因になる）
+- アプリケーション側で別のガードレール ID を指定した場合、両方が union（和集合）で適用され、より制限の厳しい方が優先される
+
+## サンプル実行のセットアップ
 
 ```powershell
 uv init
@@ -299,44 +337,6 @@ trace = result.get("amazon-bedrock-trace", {})
 | アプリ指定 + アカウント enforcement + 組織 enforcement | 3 | サービス側で union 適用 |
 
 複数のポリシー（コンテンツフィルター + 拒否トピック + ワードフィルター等）を同時に適用したい場合は、1 つのガードレールに複数のポリシーをまとめて設定します。
-
-## アカウントレベル ガードレール enforcement の設定手順
-
-### ステップ 1: ガードレールを作成する
-
-1. [Amazon Bedrock コンソール](https://console.aws.amazon.com/bedrock) にサインイン
-2. 左ナビゲーションから **Guardrails** を選択
-3. **Create guardrail** を選択
-4. ウィザードでフィルターを設定する（コンテンツフィルター、拒否トピック、ワードフィルター、機密情報フィルター、コンテキストグラウンディングチェック）
-5. **Automated reasoning policy は有効にしない**（enforcement では未サポート、ランタイムエラーになる）
-6. ウィザードを完了して作成
-
-### ステップ 2: ガードレールのバージョンを作成する
-
-1. Guardrails ページで作成したガードレールを選択
-2. **Create version** を選択
-3. ガードレール ID とバージョン番号（例: "1"）を控える
-
-### ステップ 3: アカウントレベル enforcement を有効化する
-
-1. Amazon Bedrock コンソールで **Guardrails** を選択
-2. **Account-level enforcement configurations** セクションの **Add** を選択
-3. 作成したガードレールとバージョンを選択
-4. Model enforcement control で **Embed モデルを除外リストに追加**する
-5. 選択的コンテンツガーディングを設定：
-   - **Comprehensive**（推奨）: すべてのコンテンツにガードレールを適用
-   - **Selective**: ガードコンテンツタグが付いたコンテンツのみ評価
-6. 設定を送信（Submit）
-
-### 注意事項
-
-- リージョンごとに設定が必要（本サンプルでは us-east-1）
-- 各アカウントにつき、リージョンごとに 1 つだけ設定可能
-- 設定には `bedrock:PutEnforcedGuardrailConfiguration` の IAM 権限が必要
-- 適用後は InvokeModel / Converse / ストリーミング API すべてに自動適用される
-- **RetrieveAndGenerate API には自動適用されない**（`guardrailConfiguration` を明示指定する必要がある）
-- **Embed モデルは必ず excluded_models に追加する**（ナレッジベース同期エラーの原因になる）
-- アプリケーション側で別のガードレール ID を指定した場合、両方が union（和集合）で適用され、より制限の厳しい方が優先される
 
 ## 参照
 
